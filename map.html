@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sail Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+  :root { --bg:#14171c; --panel:#1b1f26; --panel2:#222831; --line:#2d3540; --text:#e6e9ee; --dim:#9aa4b2; --accent:#4cc9f0; --p0:#ff5d5d; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f3f5f8; --panel:#fff; --panel2:#eef1f5; --line:#d5dbe3; --text:#1c2430; --dim:#667385; --accent:#0a7fb0; }
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--text); font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif; display:flex; flex-direction:column; }
+  button,input,select,textarea,.btn { font:inherit; color:inherit; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
+  button,.btn { cursor:pointer; text-decoration:none; display:inline-block; } button:hover,.btn:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#04141c; border-color:var(--accent); font-weight:600; }
+  button.on { background:var(--accent); color:#04141c; border-color:var(--accent); font-weight:600; }
+  button.danger:hover { border-color:var(--p0); color:var(--p0); }
+  textarea { width:100%; resize:vertical; min-height:90px; } input[type=text],input[type=number],select { width:100%; }
+  header { display:flex; gap:8px; align-items:center; padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 6px 0 0; } .grow { flex:1; }
+  .chip { display:inline-flex; gap:6px; align-items:center; padding:3px 9px; border-radius:14px; border:1px solid var(--line); cursor:pointer; user-select:none; font-size:12px; }
+  .chip i { width:10px; height:10px; border-radius:50%; background:var(--c); } .chip.off { opacity:.4; }
+  main { flex:1; position:relative; min-height:0; }
+  #map { position:absolute; inset:0; background:#0b1230; } #map.adding { cursor:crosshair; }
+  #timeline { position:absolute; inset:0; overflow:auto; display:none; background:var(--bg); }
+  .pin { width:20px; height:20px; border-radius:50%; background:var(--c); border:2px solid #fff; box-shadow:0 1px 5px rgba(0,0,0,.7); }
+  .pin.aged::after { content:''; display:block; width:6px; height:6px; border-radius:50%; background:#fff; margin:5px; }
+  .track { position:relative; height:100%; min-height:300px; }
+  .tick { position:absolute; top:0; bottom:0; border-left:1px solid var(--line); } .tick span { position:absolute; top:4px; left:4px; color:var(--dim); font-size:11px; white-space:nowrap; }
+  .tp { position:absolute; display:flex; gap:6px; align-items:center; cursor:grab; touch-action:none; user-select:none; white-space:nowrap; }
+  .tp i { width:16px; height:16px; border-radius:50%; background:var(--c); border:2px solid #fff; margin-left:-8px; flex:none; box-shadow:0 1px 4px rgba(0,0,0,.6); }
+  .tp span { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:1px 7px; font-size:12px; } .tp small { color:var(--dim); margin-left:4px; }
+  #panel { position:absolute; right:0; top:0; bottom:0; width:min(380px,100%); background:var(--panel); border-left:1px solid var(--line); z-index:1100; overflow:auto; padding:14px 16px; display:none; }
+  #panel h2 { margin:6px 0; font-size:18px; } .badge { display:inline-block; padding:1px 9px; border-radius:10px; font-size:11px; font-weight:700; color:#04141c; background:var(--c); }
+  .body { white-space:pre-wrap; word-break:break-word; margin:10px 0; }
+  .thumbs { display:flex; gap:8px; flex-wrap:wrap; } .thumb { position:relative; }
+  .thumb img { height:100px; max-width:100%; object-fit:cover; border:1px solid var(--line); border-radius:6px; cursor:zoom-in; display:block; background:var(--panel2); }
+  .thumb .x { position:absolute; top:3px; right:3px; padding:0 6px; line-height:18px; font-size:12px; }
+  #modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:2000; }
+  #modal.on { display:flex; } #modal .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; width:min(560px,94vw); max-height:92vh; overflow:auto; }
+  #lightbox { position:fixed; inset:0; background:rgba(0,0,0,.88); display:none; align-items:center; justify-content:center; z-index:3000; cursor:zoom-out; }
+  #lightbox.on { display:flex; } #lightbox img { max-width:96vw; max-height:96vh; }
+  .field { margin-bottom:12px; } .field label { display:block; font-size:12px; color:var(--dim); margin-bottom:3px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; } .rowtools { display:flex; gap:6px; align-items:center; flex-wrap:wrap; } .sp { flex:1; }
+  .drop { border:1px dashed var(--line); border-radius:8px; padding:8px; color:var(--dim); text-align:center; margin-top:6px; }
+  #connect { margin:60px auto; max-width:360px; text-align:center; padding:0 16px; position:absolute; inset:0; background:var(--bg); z-index:1500; } #connect p { color:var(--dim); }
+  .toast { position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:var(--panel2); border:1px solid var(--line); padding:8px 14px; border-radius:8px; z-index:4000; }
+  @media (max-width:700px) { #panel { top:auto; height:55%; border-left:0; border-top:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sail Map</h1>
+  <button id="vMap" class="on">Map</button><button id="vTime">Timeline</button>
+  <span id="legend" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+  <span class="grow"></span>
+  <button class="primary" id="addBtn">+ Add pin</button>
+  <button id="moveBtn" title="Make pins draggable so you can reposition them">Move pins</button>
+  <a class="btn" href="index.html">Roadmap</a>
+  <span id="status" style="color:var(--dim);font-size:12px"></span>
+  <button id="outBtn">Sign out</button>
+</header>
+<main>
+  <div id="map"></div>
+  <div id="timeline"></div>
+  <div id="panel"></div>
+  <div id="connect" style="display:none"></div>
+</main>
+<div id="modal"><div class="box" id="modalBox"></div></div>
+<div id="lightbox"><img alt=""></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+"use strict";
+const SB_URL = 'https://wludxeuixayesejwdiny.supabase.co';
+const SB_KEY = 'sb_publishable_pQNiLffVuqEIwyJv7BVzlA_1RQUpncC'; // publishable: safe in the page, RLS does the protecting
+const sb = supabase.createClient(SB_URL, SB_KEY);
+const CATS = {
+  landmark: { label:'Landmark', color:'#4cc9f0' }, mural: { label:'Mural', color:'#e056a0' }, pickup: { label:'Pickup', color:'#f6d34a' },
+  lore: { label:'Lore', color:'#b388ff' }, poi: { label:'Point of interest', color:'#4cd68a' }
+};
+const MAX_AGE = 10000, MAX_IMG = 1024, MAX_IMGS = 8;
+const S = { user:null, pins:new Map(), sig:'', view:'map', hidden:new Set(), addMode:false, moveMode:false, sel:null, busy:false, urls:new Map() };
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const linkify = s => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:var(--accent)">$1</a>');
+const ageText = a => a ? a.toLocaleString() + ' years ago' : 'Gameplay (no date)';
+function toast(msg, ms = 3000) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
+
+/* ---------- auth (same sign-in as the roadmap page) ---------- */
+function showLogin(msg) {
+  const l = $('#connect'); l.style.display = 'block';
+  l.innerHTML = `<h2>Sail Map</h2><p>${esc(msg || 'Sign in to continue.')}</p>
+    <div class="field"><input type="text" id="lEmail" placeholder="email" autocomplete="username"></div>
+    <div class="field"><input type="password" id="lPass" placeholder="password" autocomplete="current-password" style="width:100%"></div>
+    <button class="primary" id="lBtn">Sign in</button><p style="font-size:12px">Invite-only. Ask Nemi for an account.</p>`;
+  const go = async () => { const { error } = await sb.auth.signInWithPassword({ email: $('#lEmail').value.trim(), password: $('#lPass').value }); if (error) showLogin('Sign-in failed: ' + error.message); };
+  $('#lBtn').onclick = go; $('#lPass').onkeydown = e => { if (e.key === 'Enter') go(); };
+}
+function hideLogin() { const l = $('#connect'); if (l) { l.style.display = 'none'; l.innerHTML = ''; } }
+// the timeout keeps supabase calls out of the callback (deadlock otherwise)
+sb.auth.onAuthStateChange((ev, session) => {
+  if (session && !S.user) { S.user = session.user; setTimeout(start, 0); }
+  else if (!session) { S.user = null; S.pins = new Map(); S.sig = ''; $('#status').textContent = ''; showLogin(); }
+});
+async function start() {
+  hideLogin(); $('#status').textContent = S.user.email;
+  try { await loadPins(); } catch (e) { toast('Load failed: ' + e.message, 6000); }
+  renderAll();
+}
+
+/* ---------- data ---------- */
+async function loadPins() {
+  const { data, error } = await sb.from('pins').select('*').order('id');
+  if (error) throw error;
+  const sig = JSON.stringify(data.map(p => [p.id, p.updated]));
+  if (sig === S.sig) return false;
+  S.sig = sig; S.pins = new Map(data.map(p => [p.id, p])); return true;
+}
+async function savePin(id, patch) {
+  patch.updated = new Date().toISOString();
+  const { error } = await sb.from('pins').update(patch).eq('id', id);
+  if (error) { toast('Save failed: ' + error.message, 6000); throw error; }
+  Object.assign(S.pins.get(id), patch);
+}
+async function signed(key) {
+  const hit = S.urls.get(key); if (hit && Date.now() - hit.t < 3000000) return hit.u;
+  const { data } = await sb.storage.from('attachments').createSignedUrl(key, 3600);
+  if (!data) return ''; S.urls.set(key, { u:data.signedUrl, t:Date.now() }); return data.signedUrl;
+}
+async function toWebp(file) {          // longest side <= 1024px, webp (jpeg where the browser cannot encode webp)
+  if (!file.type.startsWith('image/')) throw new Error(file.name + ' is not an image');
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, MAX_IMG / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  let blob = await new Promise(r => c.toBlob(r, 'image/webp', 0.82));
+  if (!blob || blob.type !== 'image/webp') blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+  return blob;
+}
+const removeFiles = keys => keys.length ? sb.storage.from('attachments').remove(keys) : null;
+
+/* ---------- map ---------- */
+let map, layer, W, H;
+function initMap() {
+  const im = new Image();
+  im.onload = () => {
+    W = im.naturalWidth; H = im.naturalHeight; const bounds = [[0, 0], [H, W]];
+    map = L.map('map', { crs:L.CRS.Simple, minZoom:-3, maxZoom:2, zoomSnap:0.25, attributionControl:false, maxBounds:[[-H * .25, -W * .25], [H * 1.25, W * 1.25]] });
+    L.imageOverlay('map.webp', bounds).addTo(map); map.fitBounds(bounds); layer = L.layerGroup().addTo(map);
+    map.on('click', e => {
+      if (!S.addMode) return;
+      const x = e.latlng.lng / W, y = 1 - e.latlng.lat / H;
+      if (x < 0 || x > 1 || y < 0 || y > 1) return;
+      setAdd(false); openForm({ x, y });
+    });
+    renderAll();
+  };
+  im.src = 'map.webp';
+}
+const ll = p => [(1 - p.y) * H, p.x * W];
+function renderMap() {
+  if (!map) return; layer.clearLayers();
+  for (const p of S.pins.values()) {
+    if (S.hidden.has(p.category)) continue;
+    const m = L.marker(ll(p), { title:p.title, draggable:S.moveMode,
+      icon:L.divIcon({ className:'', html:`<div class="pin ${p.age ? 'aged' : ''}" style="--c:${CATS[p.category].color}"></div>`, iconSize:[24, 24], iconAnchor:[12, 12] }) });
+    m.on('click', () => select(p.id));
+    m.on('dragend', () => { const q = m.getLatLng(); savePin(p.id, { x:Math.min(1, Math.max(0, q.lng / W)), y:Math.min(1, Math.max(0, 1 - q.lat / H)) }).catch(() => renderMap()); });
+    m.addTo(layer);
+  }
+}
+
+/* ---------- timeline ---------- */
+const PAD = 30; let TW = 1800;
+function renderTimeline() {
+  const el = $('#timeline'); if (S.view !== 'timeline') return;
+  const pins = [...S.pins.values()].filter(p => p.age > 0 && !S.hidden.has(p.category)).sort((a, b) => b.age - a.age);
+  TW = Math.max(el.clientWidth - 2 * PAD - 220, 1800);
+  const X = a => PAD + (1 - a / MAX_AGE) * TW;
+  let html = `<div class="track" style="width:${TW + 2 * PAD + 220}px">`;
+  for (let a = MAX_AGE; a >= 0; a -= 1000) html += `<div class="tick" style="left:${X(a)}px"><span>${a ? a.toLocaleString() + ' yrs ago' : 'now'}</span></div>`;
+  const lanes = [];
+  for (const p of pins) {
+    const x = X(p.age); let l = lanes.findIndex(end => end <= x); if (l < 0) l = lanes.length;
+    lanes[l] = x + Math.min(40 + p.title.length * 6.5 + ageText(p.age).length * 5.5, 320);
+    html += `<div class="tp" data-id="${p.id}" style="left:${x}px;top:${40 + l * 30}px;--c:${CATS[p.category].color}"><i></i><span>${esc(p.title)}<small>${ageText(p.age)}</small></span></div>`;
+  }
+  if (!pins.length) html += '<div style="position:absolute;top:60px;left:30px;color:var(--dim)">No dated pins yet. Give a pin an age above 0 and it appears here; drag it to change its age.</div>';
+  el.innerHTML = html + '</div>';
+}
+$('#timeline').addEventListener('pointerdown', e => {
+  const t = e.target.closest('.tp'); if (!t) return;
+  const id = t.dataset.id, x0 = e.clientX; let moved = false, age = S.pins.get(id).age;
+  t.setPointerCapture(e.pointerId); S.busy = true;
+  const move = ev => {
+    if (Math.abs(ev.clientX - x0) > 4) moved = true; if (!moved) return;
+    const f = (ev.clientX - t.parentElement.getBoundingClientRect().left - PAD) / TW;
+    age = Math.min(MAX_AGE, Math.max(10, Math.round((1 - f) * MAX_AGE / 10) * 10));   // 10-year steps; 0 is reserved for gameplay pins
+    t.style.left = PAD + (1 - age / MAX_AGE) * TW + 'px'; t.querySelector('small').textContent = ageText(age);
+  };
+  const up = async () => {
+    t.removeEventListener('pointermove', move); t.removeEventListener('pointerup', up); t.removeEventListener('pointercancel', up); S.busy = false;
+    if (!moved) { select(id); return; }
+    try { await savePin(id, { age }); } catch {}
+    renderTimeline(); if (S.sel === id) renderPanel();
+  };
+  t.addEventListener('pointermove', move); t.addEventListener('pointerup', up); t.addEventListener('pointercancel', up);
+});
+
+/* ---------- panel ---------- */
+function select(id) { S.sel = id; renderPanel(); }
+async function renderPanel() {
+  const p = S.pins.get(S.sel), box = $('#panel');
+  if (!p) { box.style.display = 'none'; return; }
+  box.style.display = 'block'; const c = CATS[p.category];
+  box.innerHTML = `<div class="rowtools"><span class="badge" style="--c:${c.color}">${c.label}</span><span style="color:var(--dim)">${ageText(p.age)}</span><span class="sp"></span><button id="pClose">✕</button></div>
+    <h2>${esc(p.title)}</h2><div class="body">${linkify(p.content)}</div>
+    <div class="thumbs">${p.images.map((k, n) => `<div class="thumb"><img data-k="${esc(k)}" alt=""></div>`).join('')}</div>
+    <div class="rowtools" style="margin-top:14px"><button id="pEdit">Edit</button><button id="pShow">Show on map</button><span class="sp"></span><button id="pDel" class="danger">Delete</button></div>
+    <p style="color:var(--dim);font-size:12px">Added by ${esc(p.author || '?')} · ${new Date(p.created).toLocaleDateString()}</p>`;
+  $('#pClose').onclick = () => select(null);
+  $('#pEdit').onclick = () => openForm(p);
+  $('#pShow').onclick = () => { setView('map'); map.setView(ll(p), Math.max(map.getZoom(), 0)); };
+  $('#pDel').onclick = async () => {
+    if (!confirm('Delete this pin permanently?')) return;
+    await removeFiles(p.images);
+    const { error } = await sb.from('pins').delete().eq('id', p.id);
+    if (error) return toast('Delete failed: ' + error.message, 6000);
+    S.pins.delete(p.id); S.sig = ''; S.sel = null; renderAll();
+  };
+  for (const img of box.querySelectorAll('img[data-k]')) signed(img.dataset.k).then(u => { if (u) img.src = u; });
+}
+
+/* ---------- pin form ---------- */
+let pasteInto = null;
+function openForm(init) {
+  const edit = !!init.id;
+  const pin = edit ? init : { x:init.x, y:init.y, category:'', age:0, title:'', content:'', images:[] };
+  let keep = [...pin.images]; const add = [];           // keep: stored keys; add: {blob,url} not yet uploaded
+  const m = $('#modalBox');
+  m.innerHTML = `<h2 style="margin-top:0">${edit ? 'Edit pin' : 'New pin'}</h2>
+    <div class="grid">
+      <div class="field"><label>Category</label><select id="fCat"><option value="" disabled ${pin.category ? '' : 'selected'}>Choose…</option>
+        ${Object.entries(CATS).map(([k, c]) => `<option value="${k}" ${pin.category === k ? 'selected' : ''}>${c.label}</option>`).join('')}</select></div>
+      <div class="field"><label>Age (years ago, 0 = gameplay)</label><input type="number" id="fAge" min="0" max="${MAX_AGE}" step="1" value="${pin.age}"></div>
+    </div>
+    <div class="field"><label>Title</label><input type="text" id="fTitle" value="${esc(pin.title)}"></div>
+    <div class="field"><label>Content</label><textarea id="fBody" rows="5">${esc(pin.content)}</textarea></div>
+    <div class="thumbs" id="fThumbs"></div>
+    <div class="drop">Add images (they are shrunk to ${MAX_IMG}px and converted to webp): <a href="#" id="fBrowse" style="color:var(--accent)">browse</a> or paste<input type="file" id="fFile" accept="image/*" multiple hidden></div>
+    <div class="rowtools" style="margin-top:14px"><span class="sp"></span><button id="fCancel">Cancel</button><button class="primary" id="fSave">Save</button></div>`;
+  $('#modal').classList.add('on');
+  const thumbs = async () => {
+    $('#fThumbs').innerHTML = keep.map((k, n) => `<div class="thumb"><img data-k="${esc(k)}" alt=""><button class="x danger" data-keep="${n}">✕</button></div>`).join('')
+      + add.map((a, n) => `<div class="thumb"><img src="${a.url}" alt=""><button class="x danger" data-add="${n}">✕</button></div>`).join('');
+    for (const b of $('#fThumbs').querySelectorAll('button')) b.onclick = () => { b.dataset.keep != null ? keep.splice(+b.dataset.keep, 1) : add.splice(+b.dataset.add, 1); thumbs(); };
+    for (const img of $('#fThumbs').querySelectorAll('img[data-k]')) signed(img.dataset.k).then(u => { if (u) img.src = u; });
+  };
+  const addFiles = async list => {
+    for (const f of list) {
+      if (keep.length + add.length >= MAX_IMGS) { toast(`Max ${MAX_IMGS} images per pin`); break; }
+      try { const blob = await toWebp(f); add.push({ blob, url:URL.createObjectURL(blob) }); } catch (e) { toast(e.message, 5000); }
+    }
+    thumbs();
+  };
+  pasteInto = addFiles; thumbs();
+  $('#fBrowse').onclick = e => { e.preventDefault(); $('#fFile').click(); };
+  $('#fFile').onchange = e => addFiles([...e.target.files]);
+  $('#fCancel').onclick = closeForm;
+  $('#fSave').onclick = async () => {
+    const category = $('#fCat').value, title = $('#fTitle').value.trim(), age = Math.round(+$('#fAge').value);
+    if (!category) return toast('Choose a category');
+    if (!title) return toast('Enter a title');
+    if (!(age >= 0 && age <= MAX_AGE)) return toast(`Age must be 0 to ${MAX_AGE}`);
+    const id = pin.id || crypto.randomUUID(); const btn = $('#fSave'); btn.disabled = true;
+    const up = [];
+    try {
+      for (const a of add) {
+        const key = `pins/${id}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${a.blob.type === 'image/webp' ? 'webp' : 'jpg'}`;
+        const { error } = await sb.storage.from('attachments').upload(key, a.blob, { contentType:a.blob.type }); if (error) throw error; up.push(key);
+      }
+      const row = { category, age, title, content:$('#fBody').value, images:[...keep, ...up], updated:new Date().toISOString() };
+      if (edit) {
+        const { error } = await sb.from('pins').update(row).eq('id', id); if (error) throw error;
+        await removeFiles(pin.images.filter(k => !keep.includes(k)));
+      } else {
+        const { error } = await sb.from('pins').insert({ id, x:pin.x, y:pin.y, author:S.user.email.split('@')[0], ...row }); if (error) throw error;
+      }
+    } catch (e) { await removeFiles(up); btn.disabled = false; return toast('Save failed: ' + e.message, 6000); }
+    closeForm(); await loadPins(); S.sel = id; renderAll();
+  };
+  setTimeout(() => $('#fTitle').focus(), 30);
+}
+function closeForm() { $('#modal').classList.remove('on'); pasteInto = null; }
+
+/* ---------- wiring ---------- */
+function setView(v) {
+  S.view = v; $('#map').style.visibility = v === 'map' ? 'visible' : 'hidden'; $('#timeline').style.display = v === 'timeline' ? 'block' : 'none';
+  $('#vMap').classList.toggle('on', v === 'map'); $('#vTime').classList.toggle('on', v === 'timeline');
+  $('#addBtn').style.display = $('#moveBtn').style.display = v === 'map' ? '' : 'none';
+  if (v === 'map' && map) map.invalidateSize(); renderTimeline();
+}
+function setAdd(on) { S.addMode = on; $('#map').classList.toggle('adding', on); $('#addBtn').classList.toggle('on', on); $('#addBtn').textContent = on ? 'Tap the map… (cancel)' : '+ Add pin'; }
+function renderLegend() {
+  $('#legend').innerHTML = Object.entries(CATS).map(([k, c]) => `<span class="chip ${S.hidden.has(k) ? 'off' : ''}" data-cat="${k}" style="--c:${c.color}"><i></i>${c.label} ${[...S.pins.values()].filter(p => p.category === k).length}</span>`).join('');
+}
+function renderAll() { renderLegend(); renderMap(); renderTimeline(); if (S.sel) renderPanel(); }
+$('#legend').onclick = e => { const c = e.target.closest('[data-cat]'); if (!c) return; S.hidden.has(c.dataset.cat) ? S.hidden.delete(c.dataset.cat) : S.hidden.add(c.dataset.cat); renderAll(); };
+$('#vMap').onclick = () => setView('map'); $('#vTime').onclick = () => setView('timeline');
+$('#addBtn').onclick = () => { if (!S.user) return; setAdd(!S.addMode); if (S.addMode) toast('Tap the map where the pin goes'); };
+$('#moveBtn').onclick = () => { S.moveMode = !S.moveMode; $('#moveBtn').classList.toggle('on', S.moveMode); renderMap(); if (S.moveMode) toast('Drag pins to reposition them'); };
+$('#outBtn').onclick = () => sb.auth.signOut();
+$('#modal').onclick = e => { if (e.target.id === 'modal') closeForm(); };
+$('#lightbox').onclick = () => $('#lightbox').classList.remove('on');
+document.addEventListener('click', e => { const img = e.target.closest('.thumb img'); if (img && img.src) { $('#lightbox img').src = img.src; $('#lightbox').classList.add('on'); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeForm(); setAdd(false); $('#lightbox').classList.remove('on'); } });
+document.addEventListener('paste', e => {
+  const imgs = [...(e.clipboardData?.files || [])].filter(f => f.type.startsWith('image/'));
+  if (imgs.length && pasteInto) { e.preventDefault(); pasteInto(imgs); }
+});
+window.addEventListener('resize', renderTimeline);
+setInterval(async () => {                      // pick up pins added by other people
+  if (!S.user || document.hidden || S.busy || $('#modal').classList.contains('on')) return;
+  try { if (await loadPins()) renderAll(); } catch (e) { console.warn(e); }
+}, 10000);
+initMap();
+</script>
+</body>
+</html>

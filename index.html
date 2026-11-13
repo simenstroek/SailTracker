@@ -15,8 +15,8 @@
   * { box-sizing:border-box; }
   html,body { height:100%; margin:0; }
   body { background:var(--bg); color:var(--text); font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif; display:flex; flex-direction:column; }
-  button,input,select,textarea { font:inherit; color:inherit; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
-  button { cursor:pointer; } button:hover { border-color:var(--accent); }
+  button,input,select,textarea,a.btn { font:inherit; color:inherit; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
+  button, a.btn { cursor:pointer; } button:hover { border-color:var(--accent); }
   button.primary { background:var(--accent); color:#04141c; border-color:var(--accent); font-weight:600; }
   button.danger:hover { border-color:var(--p0); color:var(--p0); }
   textarea { width:100%; resize:vertical; min-height:70px; }
@@ -99,6 +99,7 @@
   <span class="grow"></span>
   <span id="status" style="color:var(--dim);font-size:12px"></span>
   <button class="primary" id="newBtn">+ New issue</button>
+  <a class="btn" href="map.html" style="text-decoration:none">Map</a>
   <button id="outBtn">Sign out</button>
 </header>
 <main id="mainArea">
