@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Issue Tracker</title>
+<title>Sail Roadmap</title>
 <style>
   :root {
     --bg:#14171c; --panel:#1b1f26; --panel2:#222831; --line:#2d3540; --text:#e6e9ee; --dim:#9aa4b2;
@@ -69,13 +69,31 @@
   .toast { position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:var(--panel2); border:1px solid var(--line); padding:8px 14px; border-radius:8px; z-index:30; }
   .rowtools { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
   .sp { flex:1; }
+  :root { --epic:#e056a0; }
+  .caret { width:16px; text-align:center; color:var(--dim); cursor:pointer; user-select:none; flex:none; }
+  .badge.ty { text-transform:uppercase; letter-spacing:.04em; font-size:10px; flex:none; }
+  .ty-epic { color:#fff; background:var(--epic); border-color:var(--epic); }
+  .ty-story { color:var(--accent); border-color:var(--accent); }
+  .ty-task { color:var(--dim); } .ty-spike { color:var(--p1); border-color:var(--p1); }
+  .prog { width:70px; height:6px; background:var(--panel2); border-radius:3px; overflow:hidden; flex:none; border:1px solid var(--line); }
+  .prog i { display:block; height:100%; background:var(--ok); }
+  .pc { color:var(--dim); font-size:12px; width:48px; text-align:right; font-variant-numeric:tabular-nums; flex:none; }
+  .row.epic .title { font-weight:700; }
+  .ms { color:var(--dim); }
+  .listtools { padding:8px 14px; display:flex; gap:6px; border-bottom:1px solid var(--line); }
+  .crumbs { color:var(--dim); font-size:12px; margin-bottom:6px; }
+  .crumbs a, a.goto { color:var(--accent); cursor:pointer; text-decoration:none; }
+  .child { display:flex; gap:8px; align-items:center; padding:5px 8px; border:1px solid var(--line); border-radius:6px; margin-bottom:4px; background:var(--panel); cursor:pointer; }
+  .child:hover { border-color:var(--accent); } .child .title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .child.done .title { text-decoration:line-through; color:var(--dim); }
   @media (max-width:800px) { main { flex-direction:column; } #list { width:100%; max-height:45%; border-right:0; border-bottom:1px solid var(--line); } }
 </style>
 </head>
 <body>
 <header>
-  <h1>Issue Tracker</h1>
+  <h1>Sail Roadmap</h1>
   <div class="tabs" id="tabs"></div>
+  <select id="milestone" style="width:auto"><option value="">All milestones</option></select>
   <select id="area" style="width:auto"><option value="">All areas</option></select>
   <input id="search" type="text" placeholder="Search…  ( / )">
   <span class="grow"></span>
@@ -105,12 +123,18 @@ const CLAUDE_STATES = [
   { v:'none', label:'Not assigned' }, { v:'queued', label:'Queued for Claude' }, { v:'working', label:'Claude working' },
   { v:'needs_review', label:'Needs your review' }, { v:'needs_input', label:'Claude needs input' }, { v:'done', label:'Claude done' }
 ];
+const TYPES = [
+  { v:'epic', label:'Epic' }, { v:'story', label:'Story' }, { v:'task', label:'Task' }, { v:'spike', label:'Spike / decision' }
+];
 const ACTIVE = ['open','in_progress','blocked'];
+const DONE = ['done','wontfix'];
 let AUTHOR = 'me';
 
 /* ---------- state ---------- */
+const loadExp = () => { try { return new Set(JSON.parse(localStorage.getItem('sailtracker.expanded') || '[]')); } catch { return new Set(); } };
+const saveExp = () => { try { localStorage.setItem('sailtracker.expanded', JSON.stringify([...S.expanded])); } catch {} };
 const S = { user:null, issues:new Map(), sig:'', sel:null,
-            view:'active', area:'', q:'', drafts:{}, pending:{}, urlCache:new Map() };
+            view:'roadmap', area:'', milestone:'', q:'', drafts:{}, pending:{}, urlCache:new Map(), expanded:loadExp(), flat:[] };
 const $ = (s, r=document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const linkify = s => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:var(--accent)">$1</a>');
@@ -154,7 +178,8 @@ function normalize(o) {
   o.priority = Number.isInteger(o.priority) ? o.priority : 2;
   o.status = o.status || 'open'; o.claude = o.claude || { state:'none', note:'' };
   o.comments = o.comments || []; o.attachments = o.attachments || []; o.labels = o.labels || [];
-  o.area = o.area || ''; o.description = o.description || ''; return o;
+  o.area = o.area || ''; o.description = o.description || '';
+  o.type = TYPES.some(t => t.v === o.type) ? o.type : 'task'; o.parent = o.parent || ''; o.milestone = o.milestone || ''; return o;
 }
 async function loadAll() {
   const { data, error } = await sb.from('issues').select('id,data');
@@ -190,53 +215,126 @@ async function attachmentURL(path) {
   if (!data) return '';
   S.urlCache.set(path, { u: data.signedUrl, t: Date.now() }); return data.signedUrl;
 }
+
+
 const isImg = n => /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(n || '');
 
 /* ---------- view helpers ---------- */
-function visible() {
+function matches(i) {                                   // area / milestone / search filters (not the tab)
   const q = S.q.trim().toLowerCase();
+  if (S.area && i.area !== S.area) return false;
+  if (S.milestone && i.milestone !== S.milestone) return false;
+  if (q) {
+    const hay = (shortId(i.id) + ' ' + i.id + ' ' + i.title + ' ' + i.description + ' ' + i.area + ' ' + i.milestone + ' ' + i.labels.join(' ') + ' ' + i.comments.map(c => c.text).join(' ')).toLowerCase();
+    if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
+  }
+  return true;
+}
+function visible() {
   return [...S.issues.values()].filter(i => {
     if (S.view === 'active' && !ACTIVE.includes(i.status)) return false;
     if (S.view === 'claude' && !['queued','working','needs_review','needs_input'].includes(i.claude.state)) return false;
     if (S.view === 'later' && i.status !== 'later') return false;
-    if (S.view === 'done' && !['done','wontfix'].includes(i.status)) return false;
-    if (S.area && i.area !== S.area) return false;
-    if (q) {
-      const hay = (shortId(i.id) + ' ' + i.id + ' ' + i.title + ' ' + i.description + ' ' + i.area + ' ' + i.labels.join(' ') + ' ' + i.comments.map(c => c.text).join(' ')).toLowerCase();
-      if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
-    }
-    return true;
+    if (S.view === 'done' && !DONE.includes(i.status)) return false;
+    return matches(i);
   }).sort((a, b) => a.priority - b.priority || (b.updated || '').localeCompare(a.updated || ''));
 }
+
+/* ---------- hierarchy ---------- */
+const msKey = m => m || 'zzzz';
+const cmpOrder = (a, b) => msKey(a.milestone).localeCompare(msKey(b.milestone)) || a.id.localeCompare(b.id);
+function treeIndex() {
+  const kids = new Map(), roots = [];
+  for (const i of S.issues.values()) {
+    if (i.parent && i.parent !== i.id && S.issues.has(i.parent)) { if (!kids.has(i.parent)) kids.set(i.parent, []); kids.get(i.parent).push(i); }
+    else roots.push(i);
+  }
+  for (const a of kids.values()) a.sort(cmpOrder);
+  roots.sort((a, b) => (a.type === 'epic' ? 0 : 1) - (b.type === 'epic' ? 0 : 1) || a.id.localeCompare(b.id));
+  return { kids, roots };
+}
+function progress(i, kids, seen = new Set()) {           // leaf descendants done / total (won't-fix excluded)
+  if (seen.has(i.id)) return { done:0, total:0 }; seen.add(i.id);
+  const k = kids.get(i.id) || [];
+  if (!k.length) return i.status === 'wontfix' ? { done:0, total:0 } : { done: i.status === 'done' ? 1 : 0, total:1 };
+  let done = 0, total = 0; for (const c of k) { const p = progress(c, kids, seen); done += p.done; total += p.total; }
+  return { done, total };
+}
+function descendants(id, kids, out = new Set()) { for (const c of kids.get(id) || []) if (!out.has(c.id)) { out.add(c.id); descendants(c.id, kids, out); } return out; }
+function ancestors(i) { const out = []; const seen = new Set([i.id]); let p = S.issues.get(i.parent); while (p && !seen.has(p.id)) { out.unshift(p); seen.add(p.id); p = S.issues.get(p.parent); } return out; }
+function expandTo(id) { const i = S.issues.get(id); if (!i) return; for (const a of ancestors(i)) S.expanded.add(a.id); saveExp(); }
+function parentOptions(selfId, cur) {                    // epics and stories, not self or own descendants
+  const { kids } = treeIndex(); const bad = selfId ? descendants(selfId, kids) : new Set(); if (selfId) bad.add(selfId);
+  const list = [...S.issues.values()].filter(x => ['epic','story'].includes(x.type) && !bad.has(x.id)).sort((a, b) => a.id.localeCompare(b.id));
+  return '<option value="">(none)</option>' + list.map(x => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${shortId(x.id)} ${esc(x.title)}</option>`).join('');
+}
+const typeBadge = t => `<span class="badge ty ty-${t}">${esc(typeLabel(t))}</span>`;
+const progHTML = p => p.total ? `<div class="prog" title="${p.done} of ${p.total} done"><i style="width:${Math.round(100 * p.done / p.total)}%"></i></div><span class="pc">${p.done}/${p.total}</span>` : '';
 const priLabel = v => PRIORITIES.find(p => p.v === v)?.label || 'P' + v;
 const stLabel = v => STATUSES.find(s => s.v === v)?.label || v;
 const clLabel = v => CLAUDE_STATES.find(s => s.v === v)?.label || v;
+const typeLabel = v => TYPES.find(t => t.v === v)?.label || v;
 
 /* ---------- rendering: list ---------- */
 function renderTabs() {
-  const counts = { active:0, claude:0, later:0, done:0, all:S.issues.size };
+  const counts = { roadmap:'', active:0, claude:0, later:0, done:0, all:S.issues.size };
   for (const i of S.issues.values()) {
     if (ACTIVE.includes(i.status)) counts.active++;
     if (['queued','working','needs_review','needs_input'].includes(i.claude.state)) counts.claude++;
     if (i.status === 'later') counts.later++;
-    if (['done','wontfix'].includes(i.status)) counts.done++;
+    if (DONE.includes(i.status)) counts.done++;
   }
-  const tabs = [['active','Active'],['claude','Claude'],['later','Later'],['done','Done'],['all','All']];
+  { const { kids, roots } = treeIndex(); let d = 0, t = 0; for (const r of roots) { const p = progress(r, kids); d += p.done; t += p.total; } counts.roadmap = t ? d + '/' + t : ''; }
+  const tabs = [['roadmap','Roadmap'],['active','Active'],['claude','Claude'],['later','Later'],['done','Done'],['all','All']];
   $('#tabs').innerHTML = tabs.map(([k, l]) => `<button data-view="${k}" class="${S.view === k ? 'on' : ''}">${l} <span style="opacity:.7">${counts[k]}</span></button>`).join('');
+  const mss = [...new Set([...S.issues.values()].map(i => i.milestone).filter(Boolean))].sort();
+  $('#milestone').innerHTML = '<option value="">All milestones</option>' + mss.map(m => `<option ${m === S.milestone ? 'selected' : ''}>${esc(m)}</option>`).join('');
   const areas = [...new Set([...S.issues.values()].map(i => i.area).filter(Boolean))].sort();
   const sel = $('#area'); const cur = S.area;
   sel.innerHTML = '<option value="">All areas</option>' + areas.map(a => `<option ${a === cur ? 'selected' : ''}>${esc(a)}</option>`).join('');
 }
+function renderTree() {
+  const box = $('#list'); const { kids, roots } = treeIndex(); S.flat = [];
+  const filtering = !!(S.q.trim() || S.area || S.milestone);
+  const shows = new Map();
+  const vis = (i, seen = new Set()) => {
+    if (shows.has(i.id)) return shows.get(i.id); if (seen.has(i.id)) return false; seen.add(i.id);
+    let v = matches(i); for (const c of kids.get(i.id) || []) if (vis(c, seen)) v = true; shows.set(i.id, v); return v;
+  };
+  roots.forEach(r => vis(r));
+  let html = `<div class="listtools"><button id="expAll">Expand all</button><button id="colAll">Collapse all</button></div>`;
+  const walk = (i, depth) => {
+    if (!shows.get(i.id)) return;
+    const k = (kids.get(i.id) || []).filter(c => shows.get(c.id)); const open = filtering || S.expanded.has(i.id);
+    S.flat.push(i.id); const p = progress(i, kids);
+    html += `<div class="row ${i.type === 'epic' ? 'epic' : ''} ${S.sel === i.id ? 'sel' : ''} ${DONE.includes(i.status) ? 'done' : ''}" data-id="${i.id}" style="padding-left:${10 + depth * 22}px">
+      <span class="caret" ${k.length ? `data-tog="${i.id}"` : ''}>${k.length ? (open ? '▾' : '▸') : ''}</span>${typeBadge(i.type)}
+      <div class="t"><div class="title">${esc(i.title || '(untitled)')}</div>
+        <div class="meta"><span class="id">${shortId(i.id)}</span>${i.milestone ? `<span class="ms">${esc(i.milestone)}</span>` : ''}${i.area ? `<span>${esc(i.area)}</span>` : ''}
+          ${i.status !== 'open' && i.status !== 'done' ? `<span class="badge ${i.status === 'later' ? 'st-later' : ''}">${esc(stLabel(i.status))}</span>` : ''}
+          ${i.claude.state !== 'none' ? `<span class="badge cl">Claude: ${esc(clLabel(i.claude.state))}</span>` : ''}</div></div>
+      ${progHTML(p)}<span class="badge pri${i.priority}">P${i.priority}</span></div>`;
+    if (k.length && open) for (const c of k) walk(c, depth + 1);
+  };
+  roots.forEach(r => walk(r, 0));
+  if (!S.flat.length) html += '<div class="empty">Nothing here.</div>';
+  box.innerHTML = html;
+  $('#expAll').onclick = () => { for (const [id, k] of kids) if (k.length) S.expanded.add(id); saveExp(); renderList(); };
+  $('#colAll').onclick = () => { S.expanded.clear(); saveExp(); renderList(); };
+}
 function renderList() {
+  if (S.view === 'roadmap') return renderTree();
   const items = visible(); const box = $('#list');
   if (!items.length) { box.innerHTML = '<div class="empty">Nothing here.</div>'; return; }
   let html = '', lastPri = null;
   for (const i of items) {
     if (i.priority !== lastPri) { html += `<div class="group">${esc(priLabel(i.priority))}</div>`; lastPri = i.priority; }
+    const par = S.issues.get(i.parent);
     html += `<div class="row ${S.sel === i.id ? 'sel' : ''} ${['done','wontfix'].includes(i.status) ? 'done' : ''}" data-id="${i.id}">
       <span class="badge pri${i.priority}">P${i.priority}</span>
       <div class="t"><div class="title">${esc(i.title || '(untitled)')}</div>
-        <div class="meta"><span class="id">${shortId(i.id)}</span>
+        <div class="meta"><span class="id">${shortId(i.id)}</span>${typeBadge(i.type)}
+          ${par ? `<span>↳ ${esc(par.title)}</span>` : ''}${i.milestone ? `<span class="ms">${esc(i.milestone)}</span>` : ''}
           ${i.area ? `<span>${esc(i.area)}</span>` : ''}
           ${i.status !== 'open' ? `<span class="badge ${i.status === 'done' ? 'st-done' : i.status === 'later' ? 'st-later' : ''}">${esc(stLabel(i.status))}</span>` : ''}
           ${i.claude.state !== 'none' ? `<span class="badge cl">Claude: ${esc(clLabel(i.claude.state))}</span>` : ''}
@@ -261,7 +359,10 @@ function renderDetail() {
   const i = S.issues.get(S.sel); const box = $('#detail');
   if (!i) { box.innerHTML = '<div class="empty">Select an issue</div>'; return; }
   const draft = S.drafts[i.id] || ''; const pend = S.pending[i.id] || [];
+  const { kids } = treeIndex(); const ch = kids.get(i.id) || []; const prog = progress(i, kids);
+  const crumbs = ancestors(i).map(a => `<a data-goto="${a.id}">${esc(a.title)}</a>`).join(' › ');
   box.innerHTML = `
+  ${crumbs ? `<div class="crumbs">${crumbs}</div>` : ''}
   <div class="rowtools" style="margin-bottom:8px"><span class="id">${shortId(i.id)}</span> <span style="color:var(--dim);font-size:12px">created ${fmt(i.created)} · updated ${fmt(i.updated)}</span><span class="sp"></span>
     <button id="dLater">${i.status === 'later' ? 'Back to Open' : 'Mark for later'}</button>
     <button id="dDone">${['done','wontfix'].includes(i.status) ? 'Reopen' : 'Mark done'}</button>
@@ -273,7 +374,16 @@ function renderDetail() {
     <div class="field"><label>Area</label><input type="text" id="fArea" list="areas" value="${esc(i.area)}"><datalist id="areas">${[...new Set([...S.issues.values()].map(x => x.area).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join('')}</datalist></div>
     <div class="field"><label>Labels (comma separated)</label><input type="text" id="fLabels" value="${esc(i.labels.join(', '))}"></div>
   </div>
-  <div class="field"><label>Description</label><textarea id="fDesc" rows="6">${esc(i.description)}</textarea></div>
+  <div class="grid">
+    <div class="field"><label>Type</label><select id="fType">${opts(TYPES, i.type)}</select></div>
+    <div class="field"><label>Parent</label><select id="fParent">${parentOptions(i.id, i.parent)}</select></div>
+    <div class="field"><label>Milestone</label><input type="text" id="fMs" list="mss" value="${esc(i.milestone)}"><datalist id="mss">${[...new Set([...S.issues.values()].map(x => x.milestone).filter(Boolean))].sort().map(a => `<option value="${esc(a)}">`).join('')}</datalist></div>
+  </div>
+  <div class="field"><label>Description</label><textarea id="fDesc" rows="${i.description.length > 600 ? 14 : 7}">${esc(i.description)}</textarea></div>
+
+  ${['epic','story'].includes(i.type) || ch.length ? `<h3>Children ${prog.total ? `(${prog.done}/${prog.total} done)` : ''}</h3>
+  <div id="children">${ch.map(c => `<div class="child ${DONE.includes(c.status) ? 'done' : ''}" data-goto="${c.id}">${typeBadge(c.type)}<span class="title">${esc(c.title)}</span>${c.milestone ? `<span class="ms">${esc(c.milestone)}</span>` : ''}${c.status !== 'open' ? `<span class="badge">${esc(stLabel(c.status))}</span>` : ''}<span class="badge pri${c.priority}">P${c.priority}</span></div>`).join('') || '<div style="color:var(--dim)">No children yet.</div>'}</div>
+  <div style="margin-top:6px"><button id="addChild">+ Add ${i.type === 'epic' ? 'story' : 'task'}</button></div>` : ''}
 
   <h3>Claude</h3>
   <div class="claudebox">
@@ -309,11 +419,18 @@ function bindDetail(i) {
   $d('#fArea').onchange = e => save(o => o.area = e.target.value.trim());
   $d('#fLabels').onchange = e => save(o => o.labels = e.target.value.split(',').map(s => s.trim()).filter(Boolean));
   $d('#fDesc').onchange = e => save(o => o.description = e.target.value);
+  $d('#fType').onchange = async e => { await save(o => o.type = e.target.value); renderDetail(); };
+  $d('#fParent').onchange = async e => { await save(o => o.parent = e.target.value); expandTo(id); renderAll(); };
+  $d('#fMs').onchange = e => save(o => o.milestone = e.target.value.trim());
+  if ($d('#addChild')) $d('#addChild').onclick = () => openNew({ parent:id, type: i.type === 'epic' ? 'story' : 'task', milestone:i.milestone, area:i.area });
+  for (const g of $('#detail').querySelectorAll('[data-goto]')) g.onclick = () => { S.sel = g.dataset.goto; expandTo(S.sel); renderAll(); };
   $d('#fClNote').onchange = e => save(o => o.claude.note = e.target.value);
   $d('#dLater').onclick = async () => { await save(o => o.status = o.status === 'later' ? 'open' : 'later'); renderDetail(); };
   $d('#dDone').onclick = async () => { await save(o => o.status = ['done','wontfix'].includes(o.status) ? 'open' : 'done'); renderDetail(); };
   $d('#dDel').onclick = async () => {
-    if (!confirm('Delete this issue permanently?')) return;
+    const kidsHere = [...S.issues.values()].filter(x => x.parent === id);
+    if (!confirm('Delete this issue permanently?' + (kidsHere.length ? `\n\nIts ${kidsHere.length} child item(s) will move up to its parent.` : ''))) return;
+    for (const c of kidsHere) await patchIssue(c.id, o => o.parent = i.parent);
     const { data: fl } = await sb.storage.from('attachments').list(id);
     if (fl?.length) await sb.storage.from('attachments').remove(fl.map(f => `${id}/${f.name}`));
     await sb.from('issues').delete().eq('id', id);
@@ -354,16 +471,22 @@ async function addIssueFiles(id, files) {
 }
 
 /* ---------- new issue modal ---------- */
-function openNew() {
+function openNew(preset = {}) {
   if (!S.user) return;
   const files = [];
   const m = $('#modalBox');
-  m.innerHTML = `<h2 style="margin-top:0">New issue</h2>
+  const defType = preset.type || (S.view === 'roadmap' ? 'story' : 'task');
+  m.innerHTML = `<h2 style="margin-top:0">New ${preset.parent ? 'child item' : 'issue'}</h2>
     <div class="field"><label>Title</label><input type="text" id="nTitle" autofocus></div>
+    <div class="grid">
+      <div class="field"><label>Type</label><select id="nType">${opts(TYPES, defType)}</select></div>
+      <div class="field"><label>Parent</label><select id="nParent">${parentOptions(null, preset.parent || '')}</select></div>
+      <div class="field"><label>Milestone</label><input type="text" id="nMs" list="mss2" value="${esc(preset.milestone || '')}"><datalist id="mss2">${[...new Set([...S.issues.values()].map(x => x.milestone).filter(Boolean))].sort().map(a => `<option value="${esc(a)}">`).join('')}</datalist></div>
+    </div>
     <div class="field"><label>Description</label><textarea id="nDesc" rows="6" placeholder="What's wrong / what do you want? Paste screenshots here (Ctrl+V)."></textarea></div>
     <div class="grid">
       <div class="field"><label>Priority</label><select id="nPri">${opts(PRIORITIES, 2)}</select></div>
-      <div class="field"><label>Area</label><input type="text" id="nArea" list="areas2"><datalist id="areas2">${[...new Set([...S.issues.values()].map(x => x.area).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join('')}</datalist></div>
+      <div class="field"><label>Area</label><input type="text" id="nArea" list="areas2" value="${esc(preset.area || '')}"><datalist id="areas2">${[...new Set([...S.issues.values()].map(x => x.area).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join('')}</datalist></div>
     </div>
     <div class="thumbs" id="nThumbs"></div>
     <div class="drop" id="nDrop">Paste or drop screenshots here, or <a href="#" id="nBrowse" style="color:var(--accent)">browse</a><input type="file" id="nFile" multiple hidden></div>
@@ -382,19 +505,14 @@ function openNew() {
   $('#nCancel').onclick = closeModal;
   $('#nCreate').onclick = async () => {
     const title = $('#nTitle').value.trim(); if (!title) { $('#nTitle').focus(); return; }
-    let id, o;
-    for (;;) {
-      id = await nextId();
-      o = normalize({ id, title, description: $('#nDesc').value, priority: +$('#nPri').value, area: $('#nArea').value.trim(),
-        status: $('#nLater').checked ? 'later' : 'open', created: now(), updated: now(), attachments: [],
-        claude: { state: $('#nClaude').checked ? 'queued' : 'none', note: '' } });
-      const { error } = await sb.from('issues').insert({ id, data: o });
-      if (!error) break;
-      if (error.code !== '23505') { toast('Create failed: ' + error.message, 5000); return; }  // 23505 = someone else took the id, retry
-    }
-    if (files.length) { const atts = []; for (const f of files) atts.push(await saveAttachment(id, f.file)); o = await patchIssue(id, x => x.attachments.push(...atts)); }
+    const id = await nextId(); const atts = []; for (const f of files) atts.push(await saveAttachment(id, f.file));
+    const o = normalize({ id, title, description: $('#nDesc').value, priority: +$('#nPri').value, area: $('#nArea').value.trim(),
+      status: $('#nLater').checked ? 'later' : 'open', created: now(), updated: now(), attachments: atts,
+      type: $('#nType').value, parent: $('#nParent').value, milestone: $('#nMs').value.trim(),
+      claude: { state: $('#nClaude').checked ? 'queued' : 'none', note: '' } });
+    { const { error } = await sb.from('issues').insert({ id, data: o }); if (error) { toast('Create failed, try again: ' + error.message, 6000); return; } }
     S.issues.set(id, o);
-    closeModal(); S.sel = id; if (!visible().some(x => x.id === id)) S.view = 'all'; renderAll();
+    closeModal(); S.sel = id; expandTo(id); if (S.view !== 'roadmap' && !visible().some(x => x.id === id)) S.view = 'all'; renderAll();
   };
   setTimeout(() => $('#nTitle').focus(), 30);
 }
@@ -418,13 +536,17 @@ document.addEventListener('keydown', e => {
   if (typing) return;
   if (e.key === '/') { e.preventDefault(); $('#search').focus(); }
   if (e.key === 'n') { e.preventDefault(); openNew(); }
-  if (e.key === 'j' || e.key === 'k') { const items = visible(); const n = items.findIndex(x => x.id === S.sel); const t = items[Math.max(0, Math.min(items.length - 1, n + (e.key === 'j' ? 1 : -1)))]; if (t) { S.sel = t.id; renderList(); renderDetail(); } }
+  if (e.key === 'j' || e.key === 'k') { const items = S.view === 'roadmap' ? S.flat.map(x => S.issues.get(x)).filter(Boolean) : visible(); const n = items.findIndex(x => x.id === S.sel); const t = items[Math.max(0, Math.min(items.length - 1, n + (e.key === 'j' ? 1 : -1)))]; if (t) { S.sel = t.id; renderList(); renderDetail(); } }
 });
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { S.view = b.dataset.view; renderAll(); } };
 $('#area').onchange = e => { S.area = e.target.value; renderList(); };
 $('#search').oninput = e => { S.q = e.target.value; renderList(); };
-$('#newBtn').onclick = openNew; $('#outBtn').onclick = () => sb.auth.signOut();
-$('#list').onclick = e => { const r = e.target.closest('.row'); if (r) { S.sel = r.dataset.id; renderList(); renderDetail(); } };
+$('#newBtn').onclick = () => openNew(); $('#outBtn').onclick = () => sb.auth.signOut();
+$('#milestone').onchange = e => { S.milestone = e.target.value; renderList(); };
+$('#list').onclick = e => {
+  const tg = e.target.closest('[data-tog]');
+  if (tg) { const id = tg.dataset.tog; S.expanded.has(id) ? S.expanded.delete(id) : S.expanded.add(id); saveExp(); renderList(); return; }
+  const r = e.target.closest('.row'); if (r) { S.sel = r.dataset.id; renderList(); renderDetail(); } };
 $('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
 $('#detail').addEventListener('click', e => { const img = e.target.closest('.thumb img'); if (img && img.src) { $('#lightbox img').src = img.src; $('#lightbox').classList.add('on'); } });
 $('#lightbox').onclick = () => $('#lightbox').classList.remove('on');
@@ -440,7 +562,6 @@ setInterval(async () => {
     }
   } catch (e) { console.warn(e); }
 }, 8000);
-
 </script>
 </body>
 </html>
