@@ -1,0 +1,2 @@
+{ "name": "sail-tracker", "private": true, "type": "module",
+  "devDependencies": { "@supabase/supabase-js": "^2.45.4" } }

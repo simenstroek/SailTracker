@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issue Tracker</title>
+<style>
+  :root {
+    --bg:#14171c; --panel:#1b1f26; --panel2:#222831; --line:#2d3540; --text:#e6e9ee; --dim:#9aa4b2;
+    --accent:#4cc9f0; --p0:#ff5d5d; --p1:#ff9f43; --p2:#f6d34a; --p3:#6c7a89; --ok:#4cd68a; --claude:#b388ff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f3f5f8; --panel:#fff; --panel2:#eef1f5; --line:#d5dbe3; --text:#1c2430; --dim:#667385; --accent:#0a7fb0; }
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--text); font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif; display:flex; flex-direction:column; }
+  button,input,select,textarea { font:inherit; color:inherit; background:var(--panel2); border:1px solid var(--line); border-radius:6px; padding:6px 10px; }
+  button { cursor:pointer; } button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#04141c; border-color:var(--accent); font-weight:600; }
+  button.danger:hover { border-color:var(--p0); color:var(--p0); }
+  textarea { width:100%; resize:vertical; min-height:70px; }
+  input[type=text], select { width:100%; }
+  header { display:flex; gap:10px; align-items:center; padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 8px 0 0; }
+  .tabs { display:flex; gap:4px; }
+  .tabs button.on { background:var(--accent); color:#04141c; border-color:var(--accent); font-weight:600; }
+  header .grow { flex:1; min-width:120px; }
+  #search { max-width:300px; }
+  main { flex:1; display:flex; min-height:0; }
+  #list { width:46%; min-width:340px; overflow:auto; border-right:1px solid var(--line); }
+  #detail { flex:1; overflow:auto; padding:16px 20px; }
+  .group { padding:8px 14px 4px; font-weight:700; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); position:sticky; top:0; background:var(--bg); z-index:1; }
+  .row { display:flex; gap:10px; align-items:center; padding:8px 14px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .row:hover { background:var(--panel2); } .row.sel { background:var(--panel2); box-shadow:inset 3px 0 var(--accent); }
+  .row .t { flex:1; min-width:0; } .row .title { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .meta { color:var(--dim); font-size:12px; display:flex; gap:8px; flex-wrap:wrap; }
+  .id { color:var(--dim); font-variant-numeric:tabular-nums; }
+  .badge { display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; font-weight:700; border:1px solid var(--line); white-space:nowrap; }
+  .pri0 { color:var(--p0); border-color:var(--p0); } .pri1 { color:var(--p1); border-color:var(--p1); }
+  .pri2 { color:var(--p2); border-color:var(--p2); } .pri3 { color:var(--p3); border-color:var(--p3); }
+  .cl { color:var(--claude); border-color:var(--claude); }
+  .st-done { color:var(--ok); border-color:var(--ok); } .st-later { color:var(--dim); }
+  .row.done .title { text-decoration:line-through; color:var(--dim); }
+  .empty { padding:40px; text-align:center; color:var(--dim); }
+  .field { margin-bottom:12px; } .field label { display:block; font-size:12px; color:var(--dim); margin-bottom:3px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .title-input { font-size:18px; font-weight:600; }
+  h3 { margin:20px 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
+  .claudebox { border:1px solid var(--claude); border-radius:8px; padding:10px 12px; background:rgba(179,136,255,.07); }
+  .claudebox .btns { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0; }
+  .thumbs { display:flex; gap:8px; flex-wrap:wrap; }
+  .thumb { position:relative; } .thumb img { height:110px; max-width:220px; object-fit:cover; border:1px solid var(--line); border-radius:6px; cursor:zoom-in; display:block; background:var(--panel2); }
+  .thumb .x { position:absolute; top:3px; right:3px; padding:0 6px; line-height:18px; font-size:12px; opacity:0; }
+  .thumb:hover .x { opacity:1; }
+  .file { display:inline-block; padding:6px 10px; border:1px solid var(--line); border-radius:6px; background:var(--panel2); }
+  .comment { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin-bottom:8px; background:var(--panel); }
+  .comment.claude { border-color:var(--claude); }
+  .comment .h { color:var(--dim); font-size:12px; margin-bottom:3px; display:flex; gap:8px; }
+  .comment .h b { color:var(--text); } .comment .body { white-space:pre-wrap; word-break:break-word; }
+  .drop { border:1px dashed var(--line); border-radius:8px; padding:10px; color:var(--dim); text-align:center; margin-top:6px; }
+  .drop.over { border-color:var(--accent); color:var(--accent); }
+  #modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:10; }
+  #modal.on { display:flex; } #modal .box { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; width:min(640px,94vw); max-height:92vh; overflow:auto; }
+  #lightbox { position:fixed; inset:0; background:rgba(0,0,0,.88); display:none; align-items:center; justify-content:center; z-index:20; cursor:zoom-out; }
+  #lightbox.on { display:flex; } #lightbox img { max-width:96vw; max-height:96vh; }
+  #connect { margin:80px auto; max-width:520px; text-align:center; }
+  #connect p { color:var(--dim); }
+  .toast { position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:var(--panel2); border:1px solid var(--line); padding:8px 14px; border-radius:8px; z-index:30; }
+  .rowtools { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .sp { flex:1; }
+  @media (max-width:800px) { main { flex-direction:column; } #list { width:100%; max-height:45%; border-right:0; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Issue Tracker</h1>
+  <div class="tabs" id="tabs"></div>
+  <select id="area" style="width:auto"><option value="">All areas</option></select>
+  <input id="search" type="text" placeholder="Search…  ( / )">
+  <span class="grow"></span>
+  <span id="status" style="color:var(--dim);font-size:12px"></span>
+  <button class="primary" id="newBtn">+ New issue</button>
+  <button id="outBtn">Sign out</button>
+</header>
+<main id="mainArea">
+  <div id="list"></div>
+  <div id="detail"><div class="empty">Select an issue</div></div>
+</main>
+<div id="modal"><div class="box" id="modalBox"></div></div>
+<div id="lightbox"><img alt=""></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+"use strict";
+/* ---------- constants ---------- */
+const PRIORITIES = [
+  { v:0, label:'P0 Critical' }, { v:1, label:'P1 High' }, { v:2, label:'P2 Normal' }, { v:3, label:'P3 Low' }
+];
+const STATUSES = [
+  { v:'open', label:'Open' }, { v:'in_progress', label:'In progress' }, { v:'blocked', label:'Blocked' },
+  { v:'later', label:'Later' }, { v:'done', label:'Done' }, { v:'wontfix', label:"Won't fix" }
+];
+const CLAUDE_STATES = [
+  { v:'none', label:'Not assigned' }, { v:'queued', label:'Queued for Claude' }, { v:'working', label:'Claude working' },
+  { v:'needs_review', label:'Needs your review' }, { v:'needs_input', label:'Claude needs input' }, { v:'done', label:'Claude done' }
+];
+const ACTIVE = ['open','in_progress','blocked'];
+let AUTHOR = 'me';
+
+/* ---------- state ---------- */
+const S = { user:null, issues:new Map(), sig:'', sel:null,
+            view:'active', area:'', q:'', drafts:{}, pending:{}, urlCache:new Map() };
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const linkify = s => esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:var(--accent)">$1</a>');
+const now = () => new Date().toISOString();
+const fmt = iso => iso ? new Date(iso).toLocaleString([], { dateStyle:'medium', timeStyle:'short' }) : '';
+const uid = () => Math.random().toString(36).slice(2, 9);
+const shortId = id => '#' + parseInt(id, 10);
+function toast(msg, ms=2500) { const t = document.createElement('div'); t.className='toast'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), ms); }
+
+/* ---------- Supabase ---------- */
+const SB_URL = 'https://wludxeuixayesejwdiny.supabase.co';
+const SB_KEY = 'sb_publishable_pQNiLffVuqEIwyJv7BVzlA_1RQUpncC'; // publishable: safe in the page, RLS does the protecting
+const sb = supabase.createClient(SB_URL, SB_KEY);
+async function start(user) {
+  AUTHOR = user.email.split('@')[0];
+  $('#status').textContent = user.email;
+  try { await loadAll(); } catch (e) { toast('Load failed: ' + e.message, 5000); }
+  renderAll();
+}
+function showLogin(msg) {
+  $('#list').innerHTML = '';
+  $('#detail').innerHTML = `<div id="connect"><h2>Issue Tracker</h2><p>${esc(msg || 'Sign in to continue.')}</p>
+    <div class="field"><input type="text" id="lEmail" placeholder="email" autocomplete="username"></div>
+    <div class="field"><input type="password" id="lPass" placeholder="password" autocomplete="current-password" style="width:100%"></div>
+    <button class="primary" id="lBtn">Sign in</button>
+    <p style="font-size:12px">Invite-only. Ask Nemi for an account.</p></div>`;
+  const go = async () => {
+    const { error } = await sb.auth.signInWithPassword({ email: $('#lEmail').value.trim(), password: $('#lPass').value });
+    if (error) showLogin('Sign-in failed: ' + error.message);
+  };
+  $('#lBtn').onclick = go; $('#lPass').onkeydown = e => { if (e.key === 'Enter') go(); };
+}
+// INITIAL_SESSION fires on page load too; the timeout keeps supabase calls out of the callback (deadlock otherwise)
+sb.auth.onAuthStateChange((ev, session) => {
+  if (session && !S.user) { S.user = session.user; setTimeout(() => start(session.user), 0); }
+  else if (!session) { S.user = null; S.issues = new Map(); S.sel = null; S.sig = ''; $('#status').textContent = ''; showLogin(); }
+});
+
+/* ---------- data ---------- */
+function normalize(o) {
+  o.priority = Number.isInteger(o.priority) ? o.priority : 2;
+  o.status = o.status || 'open'; o.claude = o.claude || { state:'none', note:'' };
+  o.comments = o.comments || []; o.attachments = o.attachments || []; o.labels = o.labels || [];
+  o.area = o.area || ''; o.description = o.description || ''; return o;
+}
+async function loadAll() {
+  const { data, error } = await sb.from('issues').select('id,data');
+  if (error) throw error;
+  const next = new Map(data.map(r => [r.id, normalize({ ...r.data, id: r.id })]));
+  const sig = JSON.stringify([...next]);
+  if (sig === S.sig) return false;
+  S.sig = sig; S.issues = next; return true;
+}
+// shortcut: read-modify-write of the whole issue doc, so two people editing the same issue in the same second can overwrite each other; upgrade to a comments table if that bites
+async function patchIssue(id, fn) {
+  const { data: row, error: e1 } = await sb.from('issues').select('data').eq('id', id).single();
+  if (e1) throw e1;
+  const cur = normalize(row.data); fn(cur); cur.updated = now(); cur.id = id;
+  const { error } = await sb.from('issues').update({ data: cur }).eq('id', id);
+  if (error) throw error;
+  S.issues.set(id, cur); return cur;
+}
+async function nextId() {
+  const { data } = await sb.from('issues').select('id').order('id', { ascending: false }).limit(1);
+  return String((parseInt(data?.[0]?.id, 10) || 0) + 1).padStart(4, '0');
+}
+async function saveAttachment(issueId, file) {
+  const clean = (file.name || 'screenshot.png').replace(/[^\w.\-]+/g, '_');
+  const name = Date.now() + '-' + clean;
+  const { error } = await sb.storage.from('attachments').upload(`${issueId}/${name}`, file, { contentType: file.type || undefined });
+  if (error) throw error;
+  return { file: `attachments/${issueId}/${name}`, name: file.name || clean, ts: now() };
+}
+async function attachmentURL(path) {
+  const hit = S.urlCache.get(path); if (hit && Date.now() - hit.t < 3000000) return hit.u;
+  const { data } = await sb.storage.from('attachments').createSignedUrl(path.replace(/^attachments\//, ''), 3600);
+  if (!data) return '';
+  S.urlCache.set(path, { u: data.signedUrl, t: Date.now() }); return data.signedUrl;
+}
+const isImg = n => /\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(n || '');
+
+/* ---------- view helpers ---------- */
+function visible() {
+  const q = S.q.trim().toLowerCase();
+  return [...S.issues.values()].filter(i => {
+    if (S.view === 'active' && !ACTIVE.includes(i.status)) return false;
+    if (S.view === 'claude' && !['queued','working','needs_review','needs_input'].includes(i.claude.state)) return false;
+    if (S.view === 'later' && i.status !== 'later') return false;
+    if (S.view === 'done' && !['done','wontfix'].includes(i.status)) return false;
+    if (S.area && i.area !== S.area) return false;
+    if (q) {
+      const hay = (shortId(i.id) + ' ' + i.id + ' ' + i.title + ' ' + i.description + ' ' + i.area + ' ' + i.labels.join(' ') + ' ' + i.comments.map(c => c.text).join(' ')).toLowerCase();
+      if (!q.split(/\s+/).every(w => hay.includes(w))) return false;
+    }
+    return true;
+  }).sort((a, b) => a.priority - b.priority || (b.updated || '').localeCompare(a.updated || ''));
+}
+const priLabel = v => PRIORITIES.find(p => p.v === v)?.label || 'P' + v;
+const stLabel = v => STATUSES.find(s => s.v === v)?.label || v;
+const clLabel = v => CLAUDE_STATES.find(s => s.v === v)?.label || v;
+
+/* ---------- rendering: list ---------- */
+function renderTabs() {
+  const counts = { active:0, claude:0, later:0, done:0, all:S.issues.size };
+  for (const i of S.issues.values()) {
+    if (ACTIVE.includes(i.status)) counts.active++;
+    if (['queued','working','needs_review','needs_input'].includes(i.claude.state)) counts.claude++;
+    if (i.status === 'later') counts.later++;
+    if (['done','wontfix'].includes(i.status)) counts.done++;
+  }
+  const tabs = [['active','Active'],['claude','Claude'],['later','Later'],['done','Done'],['all','All']];
+  $('#tabs').innerHTML = tabs.map(([k, l]) => `<button data-view="${k}" class="${S.view === k ? 'on' : ''}">${l} <span style="opacity:.7">${counts[k]}</span></button>`).join('');
+  const areas = [...new Set([...S.issues.values()].map(i => i.area).filter(Boolean))].sort();
+  const sel = $('#area'); const cur = S.area;
+  sel.innerHTML = '<option value="">All areas</option>' + areas.map(a => `<option ${a === cur ? 'selected' : ''}>${esc(a)}</option>`).join('');
+}
+function renderList() {
+  const items = visible(); const box = $('#list');
+  if (!items.length) { box.innerHTML = '<div class="empty">Nothing here.</div>'; return; }
+  let html = '', lastPri = null;
+  for (const i of items) {
+    if (i.priority !== lastPri) { html += `<div class="group">${esc(priLabel(i.priority))}</div>`; lastPri = i.priority; }
+    html += `<div class="row ${S.sel === i.id ? 'sel' : ''} ${['done','wontfix'].includes(i.status) ? 'done' : ''}" data-id="${i.id}">
+      <span class="badge pri${i.priority}">P${i.priority}</span>
+      <div class="t"><div class="title">${esc(i.title || '(untitled)')}</div>
+        <div class="meta"><span class="id">${shortId(i.id)}</span>
+          ${i.area ? `<span>${esc(i.area)}</span>` : ''}
+          ${i.status !== 'open' ? `<span class="badge ${i.status === 'done' ? 'st-done' : i.status === 'later' ? 'st-later' : ''}">${esc(stLabel(i.status))}</span>` : ''}
+          ${i.claude.state !== 'none' ? `<span class="badge cl">Claude: ${esc(clLabel(i.claude.state))}</span>` : ''}
+          ${i.comments.length ? `<span>💬 ${i.comments.length}</span>` : ''}
+          ${i.attachments.length ? `<span>📎 ${i.attachments.length}</span>` : ''}
+        </div></div></div>`;
+  }
+  box.innerHTML = html;
+}
+
+/* ---------- rendering: detail ---------- */
+function opts(list, cur) { return list.map(o => `<option value="${o.v}" ${String(o.v) === String(cur) ? 'selected' : ''}>${esc(o.label)}</option>`).join(''); }
+async function fillThumbs(root) {
+  for (const img of root.querySelectorAll('img[data-path]')) { const u = await attachmentURL(img.dataset.path); if (u) img.src = u; }
+}
+function thumbsHTML(list, removable, scope) {
+  return list.map((a, n) => isImg(a.name || a.file)
+    ? `<div class="thumb"><img data-path="${esc(a.file)}" alt="${esc(a.name)}" title="${esc(a.name)}">${removable ? `<button class="x danger" data-rm="${scope}" data-n="${n}">✕</button>` : ''}</div>`
+    : `<div class="thumb"><a class="file" href="#" data-open="${esc(a.file)}">📄 ${esc(a.name)}</a>${removable ? `<button class="x danger" data-rm="${scope}" data-n="${n}">✕</button>` : ''}</div>`).join('');
+}
+function renderDetail() {
+  const i = S.issues.get(S.sel); const box = $('#detail');
+  if (!i) { box.innerHTML = '<div class="empty">Select an issue</div>'; return; }
+  const draft = S.drafts[i.id] || ''; const pend = S.pending[i.id] || [];
+  box.innerHTML = `
+  <div class="rowtools" style="margin-bottom:8px"><span class="id">${shortId(i.id)}</span> <span style="color:var(--dim);font-size:12px">created ${fmt(i.created)} · updated ${fmt(i.updated)}</span><span class="sp"></span>
+    <button id="dLater">${i.status === 'later' ? 'Back to Open' : 'Mark for later'}</button>
+    <button id="dDone">${['done','wontfix'].includes(i.status) ? 'Reopen' : 'Mark done'}</button>
+    <button id="dDel" class="danger">Delete</button></div>
+  <div class="field"><input class="title-input" type="text" id="fTitle" value="${esc(i.title)}"></div>
+  <div class="grid">
+    <div class="field"><label>Priority</label><select id="fPri">${opts(PRIORITIES, i.priority)}</select></div>
+    <div class="field"><label>Status</label><select id="fStatus">${opts(STATUSES, i.status)}</select></div>
+    <div class="field"><label>Area</label><input type="text" id="fArea" list="areas" value="${esc(i.area)}"><datalist id="areas">${[...new Set([...S.issues.values()].map(x => x.area).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join('')}</datalist></div>
+    <div class="field"><label>Labels (comma separated)</label><input type="text" id="fLabels" value="${esc(i.labels.join(', '))}"></div>
+  </div>
+  <div class="field"><label>Description</label><textarea id="fDesc" rows="6">${esc(i.description)}</textarea></div>
+
+  <h3>Claude</h3>
+  <div class="claudebox">
+    <div class="rowtools"><b>${esc(clLabel(i.claude.state))}</b><span class="sp"></span>
+      ${i.claude.state === 'none' || i.claude.state === 'done' ? '<button class="primary" data-cl="queued">Mark for Claude</button>' : ''}
+      ${['queued','working','needs_input'].includes(i.claude.state) ? '<button data-cl="none">Take back</button>' : ''}
+      ${i.claude.state === 'needs_review' ? '<button class="primary" data-cl="done">Accept</button><button data-cl="queued">Send back to Claude</button>' : ''}
+    </div>
+    <div class="field" style="margin:6px 0 0"><label>Instructions / notes for Claude</label><textarea id="fClNote" rows="2">${esc(i.claude.note || '')}</textarea></div>
+  </div>
+
+  <h3>Screenshots &amp; files</h3>
+  <div class="thumbs" id="atts">${thumbsHTML(i.attachments, true, 'issue')}</div>
+  <div class="drop" id="dropIssue">Paste (Ctrl+V), drop files here, or <a href="#" id="pickFiles" style="color:var(--accent)">browse</a><input type="file" id="fileIn" multiple hidden></div>
+
+  <h3>Comments (${i.comments.length})</h3>
+  <div id="comments">${i.comments.map(c => `
+    <div class="comment ${c.author === 'Claude' ? 'claude' : ''}"><div class="h"><b>${esc(c.author)}</b><span>${fmt(c.ts)}</span><span class="sp"></span></div>
+      <div class="body">${linkify(c.text)}</div>
+      ${(c.attachments || []).length ? `<div class="thumbs" style="margin-top:6px">${thumbsHTML(c.attachments, false)}</div>` : ''}</div>`).join('')}</div>
+  <div class="field"><textarea id="cText" rows="3" placeholder="Add a comment… (Ctrl+Enter to post, paste screenshots to attach)">${esc(draft)}</textarea>
+    <div class="thumbs" id="cPend" style="margin-top:6px">${pend.map((p, n) => `<div class="thumb"><img src="${p.url}" alt=""><button class="x danger" data-rm="pend" data-n="${n}">✕</button></div>`).join('')}</div>
+    <div class="rowtools" style="margin-top:6px"><button class="primary" id="cPost">Comment</button>
+      <label style="display:flex;gap:6px;align-items:center;color:var(--dim)"><input type="checkbox" id="cClaude" style="width:auto"> also send to Claude</label></div></div>`;
+  fillThumbs(box); bindDetail(i);
+}
+function bindDetail(i) {
+  const id = i.id; const $d = s => $(s, $('#detail'));
+  const save = fn => patchIssue(id, fn).then(() => { renderTabs(); renderList(); }).catch(e => toast('Save failed: ' + e.message, 5000));
+  $d('#fTitle').onchange = e => save(o => o.title = e.target.value.trim());
+  $d('#fPri').onchange = e => save(o => o.priority = +e.target.value);
+  $d('#fStatus').onchange = e => save(o => o.status = e.target.value);
+  $d('#fArea').onchange = e => save(o => o.area = e.target.value.trim());
+  $d('#fLabels').onchange = e => save(o => o.labels = e.target.value.split(',').map(s => s.trim()).filter(Boolean));
+  $d('#fDesc').onchange = e => save(o => o.description = e.target.value);
+  $d('#fClNote').onchange = e => save(o => o.claude.note = e.target.value);
+  $d('#dLater').onclick = async () => { await save(o => o.status = o.status === 'later' ? 'open' : 'later'); renderDetail(); };
+  $d('#dDone').onclick = async () => { await save(o => o.status = ['done','wontfix'].includes(o.status) ? 'open' : 'done'); renderDetail(); };
+  $d('#dDel').onclick = async () => {
+    if (!confirm('Delete this issue permanently?')) return;
+    const { data: fl } = await sb.storage.from('attachments').list(id);
+    if (fl?.length) await sb.storage.from('attachments').remove(fl.map(f => `${id}/${f.name}`));
+    await sb.from('issues').delete().eq('id', id);
+    S.issues.delete(id); S.sel = null; renderAll();
+  };
+  for (const b of $('#detail').querySelectorAll('[data-cl]')) b.onclick = async () => {
+    const v = b.dataset.cl; const note = $d('#fClNote').value;
+    await save(o => { o.claude.state = v; o.claude.note = note; if (v === 'queued' && o.status === 'later') o.status = 'open'; });
+    renderDetail();
+  };
+  for (const b of $('#detail').querySelectorAll('[data-rm]')) b.onclick = async () => {
+    const n = +b.dataset.n;
+    if (b.dataset.rm === 'pend') { S.pending[id].splice(n, 1); renderDetail(); return; }
+    await save(o => o.attachments.splice(n, 1)); renderDetail();
+  };
+  for (const a of $('#detail').querySelectorAll('[data-open]')) a.onclick = async e => { e.preventDefault(); const u = await attachmentURL(a.dataset.open); if (u) window.open(u, '_blank'); };
+  const ct = $d('#cText'); ct.oninput = () => S.drafts[id] = ct.value;
+  ct.onkeydown = e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $d('#cPost').click(); };
+  $d('#cPost').onclick = async () => {
+    const text = ct.value.trim(); const pend = S.pending[id] || [];
+    if (!text && !pend.length) return;
+    const atts = []; for (const p of pend) atts.push(await saveAttachment(id, p.file));
+    const toClaude = $d('#cClaude').checked;
+    await save(o => { o.comments.push({ id: uid(), author: AUTHOR, ts: now(), text, attachments: atts });
+                      if (toClaude) { o.claude.state = 'queued'; if (o.status === 'later') o.status = 'open'; } });
+    delete S.drafts[id]; (S.pending[id] || []).forEach(p => URL.revokeObjectURL(p.url)); delete S.pending[id]; renderDetail();
+  };
+  $d('#pickFiles').onclick = e => { e.preventDefault(); $d('#fileIn').click(); };
+  $d('#fileIn').onchange = e => addIssueFiles(id, [...e.target.files]);
+  const dz = $d('#dropIssue');
+  dz.ondragover = e => { e.preventDefault(); dz.classList.add('over'); }; dz.ondragleave = () => dz.classList.remove('over');
+  dz.ondrop = e => { e.preventDefault(); dz.classList.remove('over'); addIssueFiles(id, [...e.dataTransfer.files]); };
+}
+async function addIssueFiles(id, files) {
+  if (!files.length) return; const atts = [];
+  for (const f of files) atts.push(await saveAttachment(id, f));
+  await patchIssue(id, o => o.attachments.push(...atts)); renderTabs(); renderList(); renderDetail();
+}
+
+/* ---------- new issue modal ---------- */
+function openNew() {
+  if (!S.user) return;
+  const files = [];
+  const m = $('#modalBox');
+  m.innerHTML = `<h2 style="margin-top:0">New issue</h2>
+    <div class="field"><label>Title</label><input type="text" id="nTitle" autofocus></div>
+    <div class="field"><label>Description</label><textarea id="nDesc" rows="6" placeholder="What's wrong / what do you want? Paste screenshots here (Ctrl+V)."></textarea></div>
+    <div class="grid">
+      <div class="field"><label>Priority</label><select id="nPri">${opts(PRIORITIES, 2)}</select></div>
+      <div class="field"><label>Area</label><input type="text" id="nArea" list="areas2"><datalist id="areas2">${[...new Set([...S.issues.values()].map(x => x.area).filter(Boolean))].map(a => `<option value="${esc(a)}">`).join('')}</datalist></div>
+    </div>
+    <div class="thumbs" id="nThumbs"></div>
+    <div class="drop" id="nDrop">Paste or drop screenshots here, or <a href="#" id="nBrowse" style="color:var(--accent)">browse</a><input type="file" id="nFile" multiple hidden></div>
+    <div class="rowtools" style="margin-top:12px">
+      <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="nClaude" style="width:auto"> Mark for Claude</label>
+      <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="nLater" style="width:auto"> Later</label>
+      <span class="sp"></span><button id="nCancel">Cancel</button><button class="primary" id="nCreate">Create</button></div>`;
+  $('#modal').classList.add('on');
+  const th = () => { $('#nThumbs').innerHTML = files.map((f, n) => `<div class="thumb"><img src="${f.url}" alt=""><button class="x danger" data-n="${n}">✕</button></div>`).join('');
+    for (const b of $('#nThumbs').querySelectorAll('button')) b.onclick = () => { files.splice(+b.dataset.n, 1); th(); }; };
+  const add = list => { for (const f of list) files.push({ file: f, url: URL.createObjectURL(f) }); th(); };
+  window.__newAdd = add;
+  $('#nBrowse').onclick = e => { e.preventDefault(); $('#nFile').click(); }; $('#nFile').onchange = e => add([...e.target.files]);
+  const dz = $('#nDrop'); dz.ondragover = e => { e.preventDefault(); dz.classList.add('over'); }; dz.ondragleave = () => dz.classList.remove('over');
+  dz.ondrop = e => { e.preventDefault(); dz.classList.remove('over'); add([...e.dataTransfer.files]); };
+  $('#nCancel').onclick = closeModal;
+  $('#nCreate').onclick = async () => {
+    const title = $('#nTitle').value.trim(); if (!title) { $('#nTitle').focus(); return; }
+    let id, o;
+    for (;;) {
+      id = await nextId();
+      o = normalize({ id, title, description: $('#nDesc').value, priority: +$('#nPri').value, area: $('#nArea').value.trim(),
+        status: $('#nLater').checked ? 'later' : 'open', created: now(), updated: now(), attachments: [],
+        claude: { state: $('#nClaude').checked ? 'queued' : 'none', note: '' } });
+      const { error } = await sb.from('issues').insert({ id, data: o });
+      if (!error) break;
+      if (error.code !== '23505') { toast('Create failed: ' + error.message, 5000); return; }  // 23505 = someone else took the id, retry
+    }
+    if (files.length) { const atts = []; for (const f of files) atts.push(await saveAttachment(id, f.file)); o = await patchIssue(id, x => x.attachments.push(...atts)); }
+    S.issues.set(id, o);
+    closeModal(); S.sel = id; if (!visible().some(x => x.id === id)) S.view = 'all'; renderAll();
+  };
+  setTimeout(() => $('#nTitle').focus(), 30);
+}
+function closeModal() { $('#modal').classList.remove('on'); window.__newAdd = null; }
+
+/* ---------- global wiring ---------- */
+function renderAll() { renderTabs(); renderList(); renderDetail(); }
+document.addEventListener('paste', e => {
+  const imgs = [...(e.clipboardData?.files || [])].filter(f => f.type.startsWith('image/'));
+  if (!imgs.length) return; e.preventDefault();
+  const named = imgs.map(f => new File([f], f.name && f.name !== 'image.png' ? f.name : `screenshot-${Date.now()}.png`, { type: f.type }));
+  if (window.__newAdd) { window.__newAdd(named); return; }
+  const id = S.sel; if (!id) { toast('Select or create an issue first'); return; }
+  if (document.activeElement && document.activeElement.id === 'cText') {      // attach to the comment being written
+    (S.pending[id] = S.pending[id] || []).push(...named.map(f => ({ file: f, url: URL.createObjectURL(f) }))); renderDetail(); $('#cText').focus();
+  } else addIssueFiles(id, named);
+});
+document.addEventListener('keydown', e => {
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+  if (e.key === 'Escape') { closeModal(); $('#lightbox').classList.remove('on'); }
+  if (typing) return;
+  if (e.key === '/') { e.preventDefault(); $('#search').focus(); }
+  if (e.key === 'n') { e.preventDefault(); openNew(); }
+  if (e.key === 'j' || e.key === 'k') { const items = visible(); const n = items.findIndex(x => x.id === S.sel); const t = items[Math.max(0, Math.min(items.length - 1, n + (e.key === 'j' ? 1 : -1)))]; if (t) { S.sel = t.id; renderList(); renderDetail(); } }
+});
+$('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { S.view = b.dataset.view; renderAll(); } };
+$('#area').onchange = e => { S.area = e.target.value; renderList(); };
+$('#search').oninput = e => { S.q = e.target.value; renderList(); };
+$('#newBtn').onclick = openNew; $('#outBtn').onclick = () => sb.auth.signOut();
+$('#list').onclick = e => { const r = e.target.closest('.row'); if (r) { S.sel = r.dataset.id; renderList(); renderDetail(); } };
+$('#modal').onclick = e => { if (e.target.id === 'modal') closeModal(); };
+$('#detail').addEventListener('click', e => { const img = e.target.closest('.thumb img'); if (img && img.src) { $('#lightbox img').src = img.src; $('#lightbox').classList.add('on'); } });
+$('#lightbox').onclick = () => $('#lightbox').classList.remove('on');
+
+/* pick up edits made by Claude or another machine (Drive sync) */
+setInterval(async () => {
+  if (!S.user || document.hidden) return;
+  try {
+    if (await loadAll()) {
+      renderTabs(); renderList();
+      const a = document.activeElement; const editing = a && $('#detail').contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName);
+      if (!editing) renderDetail();
+    }
+  } catch (e) { console.warn(e); }
+}, 8000);
+
+</script>
+</body>
+</html>
